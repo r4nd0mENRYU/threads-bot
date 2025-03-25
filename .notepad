@@ -1,0 +1,122 @@
+1. Login
+URL: https://www.threads.net/login
+ID: piopio2025y
+PASSWORD: consumer..1
+
+Playwright 선택자:
+- 사용자 이름/이메일 입력 필드: 
+  ```python
+  page.get_by_placeholder("사용자 이름, 전화번호 또는 이메일 주소")
+  ```
+  또는
+  ```python
+  page.locator("[autocomplete='username']")
+  ```
+
+- 비밀번호 입력 필드:
+  ```python
+  page.get_by_placeholder("비밀번호")
+  ```
+  또는
+  ```python
+  page.locator("[autocomplete='current-password']")
+  ```
+
+- 로그인 버튼:
+  ```python
+  page.get_by_text("로그인")
+  ``` 
+
+2. Search 
+URL: https://www.threads.net/search?q=%EC%8A%A4%ED%95%98%EB%A6%AC1000&serp_type=default
+
+- 게시물 리스트 컨테이너:
+  ```python
+  page.get_by_role("region", exact=True)
+  ```
+  또는
+  ```python
+  page.locator("[aria-label='칼럼 본문']")
+  ```
+
+- 개별 게시물 선택 (리스트 내부의 각 게시물):
+  ```python
+  # 모든 게시물 리스트 가져오기
+  posts = page.locator("article").all()
+  
+  # 특정 게시물 선택 (예: 첫 번째 게시물)
+  first_post = page.locator("article").first
+  ```
+
+- 개별 게시물 내부 요소:
+  ```python
+  # 특정 게시물 내에서 요소 선택하기 (post는 개별 게시물 locator)
+  
+  # 게시물에 hover하고 팔로우 버튼 클릭하기
+  async def follow_user(post):
+      # 게시물 컨테이너에 hover
+      await post.hover()
+      # 잠시 대기 (팔로우 버튼이 나타날 때까지)
+      await page.wait_for_timeout(500)
+      # 팔로우 버튼 클릭
+      await post.get_by_text("팔로우").click()
+  
+  # 예시 사용:
+  for post in posts:
+      await follow_user(post)
+  
+  # 팔로우 버튼
+  post.get_by_text("팔로우")
+  
+  # 사용자 이름
+  post.locator("a[role='link']").first
+  
+  # 게시 시간
+  post.locator("time").first
+  
+  # 더보기 버튼
+  post.get_by_text("더 보기")
+  
+  # 게시물 본문
+  post.locator("div[dir='auto']").first
+  
+  # 좋아요/댓글/리포스트 버튼들 (aria-label로 구분)
+  post.get_by_label("좋아요")
+  post.get_by_label("댓글")
+  post.get_by_label("리포스트")
+  ```
+
+3. 댓글 작성
+  ```python
+  # 댓글 모달 열기 (post는 개별 게시물 locator)
+  await post.get_by_label("댓글").click()
+  
+  # 댓글 입력 (자동 포커스 되어있음)
+  await page.keyboard.type("작성할 댓글 내용")
+  
+  # 게시 버튼 클릭
+  await page.get_by_role("button", name="게시").click()
+  
+  # 예시 사용:
+  async def comment_on_post(post, comment_text):
+      # 댓글 버튼 클릭
+      await post.get_by_label("댓글").click()
+      # 잠시 대기 (모달이 완전히 열릴 때까지)
+      await page.wait_for_timeout(500)
+      # 댓글 입력
+      await page.keyboard.type(comment_text)
+      # 게시 버튼 클릭
+      await page.get_by_role("button", name="게시").click()
+  ```
+
+4. 리포스트 하기
+  ```python
+  # 리포스트 동작 (post는 개별 게시물 locator)
+  async def repost_post(post):
+      # 리포스트 버튼 클릭
+      await post.get_by_label("리포스트").click()
+      # 잠시 대기 (모달이 열릴 때까지)
+      await page.wait_for_timeout(500)
+      # 리포스트 옵션 선택 (모달에서 "리포스트" 버튼 클릭)
+      await page.get_by_role("button", name="리포스트").click()
+  ```
