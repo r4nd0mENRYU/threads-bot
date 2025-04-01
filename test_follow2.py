@@ -2,14 +2,47 @@ from playwright.async_api import async_playwright
 import asyncio
 import json
 import os
+import csv
 from time import sleep
 from datetime import datetime, timedelta
+import sys
+import random
 
-# 사용자 계정 정보
-USER_ACCOUNTS = [
-    {"username": "piopio2025y", "password": "consumer..1", "token_file": "token_user1.json"},
-    {"username": "koedits0522", "password": "dkffk1004!", "token_file": "token_user2.json"}
-]
+def load_user_accounts():
+    """CSV 파일에서 사용자 계정 정보를 로드"""
+    user_accounts = []
+    try:
+        # PyInstaller로 실행될 때의 경로 처리
+        if getattr(sys, 'frozen', False):
+            # PyInstaller로 실행된 경우
+            application_path = os.path.dirname(sys.executable)
+        else:
+            # 일반 Python 스크립트로 실행된 경우
+            application_path = os.path.dirname(os.path.abspath(__file__))
+            
+        csv_path = os.path.join(application_path, 'users.csv')
+        print(f"🔍 CSV 파일 경로: {csv_path}")
+        
+        if not os.path.exists(csv_path):
+            print(f"❌ users.csv 파일을 찾을 수 없습니다: {csv_path}")
+            return []
+            
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                user_accounts.append({
+                    "username": row['id'],
+                    "password": row['password'],
+                    "token_file": f"token_{row['id']}.json"
+                })
+        print(f"✅ 사용자 계정 정보를 {csv_path}에서 로드했습니다.")
+        return user_accounts
+    except Exception as e:
+        print(f"❌ 사용자 계정 정보 로드 중 오류: {str(e)}")
+        return []
+
+# 사용자 계정 정보 로드
+USER_ACCOUNTS = load_user_accounts()
 
 async def save_storage_state(context, filename):
     """스토리지 상태를 파일로 저장"""
@@ -22,8 +55,9 @@ async def save_username(username, filename='usernames.txt'):
         f.write(f"{username}\n")
     print(f"✅ 사용자 이름 '{username}'을 {filename}에 저장했습니다.")
 
-async def is_already_followed(username, filename='followed_users.txt'):
+async def is_already_followed(username, user_id):
     """이미 팔로우한 사용자인지 확인"""
+    filename = f'followed_users_{user_id}.txt'
     if not os.path.exists(filename):
         return False
     
@@ -31,8 +65,9 @@ async def is_already_followed(username, filename='followed_users.txt'):
         followed_users = f.read().splitlines()
     return username in followed_users
 
-async def save_followed_user(username, filename='followed_users.txt'):
+async def save_followed_user(username, user_id):
     """팔로우한 사용자 이름을 파일에 저장"""
+    filename = f'followed_users_{user_id}.txt'
     with open(filename, 'a') as f:
         f.write(f"{username}\n")
     print(f"✅ 팔로우한 사용자 '{username}'을 {filename}에 저장했습니다")
@@ -45,7 +80,7 @@ async def save_timestamp(filename='last_run.json'):
     print(f"✅ 현재 시간이 {filename}에 저장되었습니다.")
 
 async def can_run_now(filename='last_run.json'):
-    """마지막 실행 후 33분이 지났는지 확인"""
+    """마지막 실행 후 1시간이 지났는지 확인"""
     if not os.path.exists(filename):
         return True
     
@@ -53,7 +88,7 @@ async def can_run_now(filename='last_run.json'):
         with open(filename, 'r') as f:
             data = json.load(f)
         last_run = datetime.fromisoformat(data['last_run'])
-        rest_time_later = last_run + timedelta(minutes=33)
+        rest_time_later = last_run + timedelta(hours=1)
         can_run = datetime.now() >= rest_time_later
         
         if not can_run:
@@ -65,17 +100,23 @@ async def can_run_now(filename='last_run.json'):
         print(f"⚠️ 시간 확인 중 오류: {str(e)}")
         return True
 
+def human_delay(min_seconds=1, max_seconds=5):
+    """사람처럼 보이는 지연 시간 생성"""
+    delay = random.uniform(min_seconds, max_seconds)
+    return delay
+
 async def process_post(page, post_index, user_index, counters):
     """개별 게시물 처리"""
     try:
         user_prefix = f"👤[사용자{user_index+1}]"
+        user_id = USER_ACCOUNTS[user_index]["username"]
         print(f"\n{user_prefix} {post_index + 1}번째 게시물 처리 중...")
         
         # 스크롤을 충분히 내려서 게시물 로딩
-        scroll_amount = post_index * 500  # 게시물 높이에 따라 적절히 조정
+        scroll_amount = post_index * 500
         print(f"{user_prefix} 📜 스크롤 위치 조정: {scroll_amount}px")
         await page.evaluate(f"window.scrollTo(0, {scroll_amount})")
-        await page.wait_for_timeout(1500)
+        await page.wait_for_timeout(human_delay(1, 2))
         
         # 게시물 컨테이너 찾기
         posts_container = page.locator(".x78zum5.xdt5ytf.x13dflua.x11xpdln .x78zum5.xdt5ytf.x1iyjqo2.x1n2onr6").first
@@ -99,7 +140,7 @@ async def process_post(page, post_index, user_index, counters):
             
             # 게시물이 화면에 보이도록 스크롤
             await post.scroll_into_view_if_needed()
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(human_delay(1, 2))
             
             if not await post.is_visible():
                 print(f"{user_prefix} ❌ {post_index + 1}번째 게시물이 보이지 않습니다.")
@@ -129,22 +170,21 @@ async def process_post(page, post_index, user_index, counters):
                 if await follow_button.locator("title").first.text_content() == "팔로우":                    
                     await follow_button.click()
                     print(f"{user_prefix} ✅ 팔로우 버튼 클릭 성공")
-                    await page.wait_for_timeout(2000)
+                    await page.wait_for_timeout(human_delay(1.5, 2.5))
                     
                     # 모달이 뜨면 팔로우 버튼 2 클릭: div.x1qjc9v5.x7sf2oe.x78zum5.xdt5ytf.x1n2onr6.x1al4vs7 div.x6ikm8r.x10wlt62.xlyipyv
                     follow_confirm = page.locator("div.x1qjc9v5.x7sf2oe.x78zum5.xdt5ytf.x1n2onr6.x1al4vs7 div.x6ikm8r.x10wlt62.xlyipyv").first
                     if await follow_confirm.is_visible():
                         await follow_confirm.click()
                         print(f"{user_prefix} ✅ 팔로우 확인 버튼 클릭 성공")
-                        await page.wait_for_timeout(2000)
+                        await page.wait_for_timeout(human_delay(1.5, 2.5))
                     
                     # ESC 키를 눌러 모달 닫기
                     await page.keyboard.press("Escape")
-                    await page.wait_for_timeout(1000)
+                    await page.wait_for_timeout(human_delay(1, 2))
                     
                     # 팔로우한 사용자 저장
-                    followed_file = f'followed_users_user{user_index+1}.txt'
-                    await save_followed_user(username, followed_file)
+                    await save_followed_user(username, user_id)
                     counters['follow'] += 1
                 else:
                     print(f"{user_prefix} ⚠️ 이미 팔로우 중입니다. {username}")
@@ -180,7 +220,7 @@ async def process_post(page, post_index, user_index, counters):
                     if await like_button.locator("title").first.text_content() == "좋아요":
                         await like_button.click()
                         print(f"{user_prefix} ❤️ {post_index + 1}번째 게시물에 좋아요를 눌렀습니다")
-                        await page.wait_for_timeout(2000)
+                        await page.wait_for_timeout(human_delay(1.5, 2.5))
                         counters['like'] += 1
                     else: 
                         print(f"{user_prefix} ❌ {post_index + 1}번째 게시물에 좋아요가 이미 눌려있습니다. 다음 게시물로 넘어갑니다.")
@@ -204,7 +244,7 @@ async def process_post(page, post_index, user_index, counters):
                 if await comment_button.is_visible():
                     await comment_button.click()
                     print(f"{user_prefix} ✅ 댓글 버튼 클릭 성공")
-                    await page.wait_for_timeout(2000)
+                    await page.wait_for_timeout(human_delay(1.5, 2.5))
                     
                     # 댓글 입력창 (자동 포커스됨)
                     comment_input = page.locator("div[contenteditable='true']").first
@@ -219,23 +259,23 @@ async def process_post(page, post_index, user_index, counters):
                             try:
                                 await post_button.click(timeout=5000)
                                 print(f"{user_prefix} ✅ 댓글을 게시했습니다")
-                                await page.wait_for_timeout(3000)
+                                await page.wait_for_timeout(human_delay(2, 3))
                                 counters['comment'] += 1
                             except Exception as e:
                                 print(f"{user_prefix} ⚠️ 댓글 게시 버튼 클릭 실패: {str(e)}")
                                 # 댓글창이 닫히지 않아 문제가 된 경우 ESC로 닫기 시도
                                 await page.keyboard.press("Escape")
-                                await page.wait_for_timeout(1000)
+                                await page.wait_for_timeout(human_delay(1, 2))
                         else:
                             print(f"{user_prefix} ❌ 게시 버튼을 찾을 수 없습니다")
                             # 댓글창 닫기 시도
                             await page.keyboard.press("Escape")
-                            await page.wait_for_timeout(1000)
+                            await page.wait_for_timeout(human_delay(1, 2))
                     else:
                         print(f"{user_prefix} ❌ 댓글 입력창을 찾을 수 없습니다")
                         # 댓글창 닫기 시도
                         await page.keyboard.press("Escape")
-                        await page.wait_for_timeout(1000)
+                        await page.wait_for_timeout(human_delay(1, 2))
                 else:
                     print(f"{user_prefix} ❌ 댓글 버튼이 보이지 않습니다")
             else:
@@ -247,10 +287,10 @@ async def process_post(page, post_index, user_index, counters):
             try:
                 print(f"{user_prefix} 🔄 댓글창 닫기 시도...")
                 await page.keyboard.press("Escape")
-                await page.wait_for_timeout(1000)
+                await page.wait_for_timeout(human_delay(1, 2))
                 # 한번 더 ESC 시도 (모달이 여러개일 수 있음)
                 await page.keyboard.press("Escape") 
-                await page.wait_for_timeout(1000)
+                await page.wait_for_timeout(human_delay(1, 2))
             except Exception as sub_e:
                 print(f"{user_prefix} ⚠️ 댓글창 닫기 실패: {str(sub_e)}")
                 
@@ -258,7 +298,7 @@ async def process_post(page, post_index, user_index, counters):
         try:
             # 간단한 조작으로 페이지 상태 확인
             await page.evaluate("window.scrollBy(0, 10)")
-            await page.wait_for_timeout(500)
+            await page.wait_for_timeout(human_delay(0.5, 1))
         except Exception as e:
             print(f"{user_prefix} ⚠️ 페이지 상태 불안정, 새로고침 필요: {str(e)}")
             return False, True
@@ -274,14 +314,14 @@ async def process_post(page, post_index, user_index, counters):
                 if await repost_button.is_visible():
                     await repost_button.click()
                     print(f"{user_prefix} ✅ 리포스트 버튼 클릭 성공")
-                    await page.wait_for_timeout(2000)
+                    await page.wait_for_timeout(human_delay(1.5, 2.5))
                     
                     # 리포스트 확인 버튼
                     repost_confirm = page.get_by_role("button", name="리포스트").last
                     if await repost_confirm.is_visible():
                         await repost_confirm.click()
                         print(f"{user_prefix} ✅ 리포스트 확인 버튼 클릭 성공")
-                        await page.wait_for_timeout(3000)
+                        await page.wait_for_timeout(human_delay(2, 3))
                         counters['repost'] += 1
                     else:
                         print(f"{user_prefix} ❌ 리포스트 확인 버튼을 찾을 수 없습니다")
@@ -295,7 +335,7 @@ async def process_post(page, post_index, user_index, counters):
             # 리포스트 오류 발생 시 ESC로 모달 닫기 시도
             try:
                 await page.keyboard.press("Escape")
-                await page.wait_for_timeout(1000)
+                await page.wait_for_timeout(human_delay(1, 2))
             except:
                 pass
             
@@ -307,9 +347,9 @@ async def process_post(page, post_index, user_index, counters):
         try:
             # 열린 모달이 있으면 닫기 시도
             await page.keyboard.press("Escape")
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(human_delay(1, 2))
             await page.keyboard.press("Escape")  # 한번 더 시도
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(human_delay(1, 2))
         except:
             pass
         return False, True  # 실패 & 페이지 재로드 필요
@@ -370,19 +410,19 @@ async def run_user_session(user_index):
                 await page.get_by_placeholder("사용자 이름, 전화번호 또는 이메일 주소").fill(username)
                 await page.get_by_placeholder("비밀번호").fill(password)
                 
-                await page.wait_for_timeout(1000)
+                await page.wait_for_timeout(human_delay(1, 2))
                 login_button = page.get_by_role("button", name="로그인", exact=True)
                 await login_button.first.click()
                 
                 await page.wait_for_load_state('networkidle')
-                await page.wait_for_timeout(10000)
+                await page.wait_for_timeout(human_delay(8, 12))
                 
                 await save_storage_state(context, token_file)
             
             # 세션 동작 시작
             while True:
                 try:
-                    # 대기 시간 확인 (리셋 후 33분이 지났는지)
+                    # 대기 시간 확인 (리셋 후 1시간이 지났는지)
                     timestamp_file = f'last_run_user{user_index+1}.json'
                     if not await can_run_now(timestamp_file):
                         print(f"{user_prefix} ⏰ 세션이 대기 중입니다. 1분 후 다시 확인합니다.")
@@ -395,22 +435,29 @@ async def run_user_session(user_index):
                         try:
                             await page.goto('https://www.threads.net/search?q=%EC%8A%A4%ED%95%98%EB%A6%AC1000&serp_type=default')
                             await page.wait_for_load_state('networkidle')
-                            await page.wait_for_timeout(5000)  # 페이지 로딩을 위해 대기 시간 증가
+                            
+                            # 현재 URL 확인
+                            current_url = page.url
+                            if 'instagram.com' in current_url:
+                                print(f"{user_prefix} ❌ Instagram URL이 감지되었습니다. 프로그램을 종료합니다.")
+                                sys.exit(1)
+                                
+                            await page.wait_for_timeout(human_delay(3, 5))  # 페이지 로딩을 위해 사람처럼 대기
                             
                             # 초기 스크롤 (맨 위로)
                             await page.evaluate("window.scrollTo(0, 0)")
-                            await page.wait_for_timeout(1000)
+                            await page.wait_for_timeout(human_delay(1, 2))
                             
                             # 콘텐츠 로드를 위해 스크롤 (약 30개 게시물 로드 목표)
                             print(f"{user_prefix} 📜 게시물 로드를 위해 스크롤 중... (약 30개 목표)")
                             for i in range(6):  # 6번 스크롤로 약 30개 게시물 로드 목표
                                 await page.evaluate(f"window.scrollTo(0, {1000 * (i + 1)})")
                                 print(f"{user_prefix} 스크롤 진행: {i+1}/6")
-                                await page.wait_for_timeout(1500)  # 각 스크롤 후 더 오래 기다려 로딩 보장
+                                await page.wait_for_timeout(human_delay(1, 2))  # 각 스크롤 후 더 오래 기다려 로딩 보장
                             
                             # 맨 위로 다시 스크롤
                             await page.evaluate("window.scrollTo(0, 0)")
-                            await page.wait_for_timeout(2000)
+                            await page.wait_for_timeout(human_delay(1, 2))
                             return True
                         except Exception as e:
                             print(f"{user_prefix} ❌ 검색 페이지 로드 중 오류: {str(e)}")
@@ -419,7 +466,7 @@ async def run_user_session(user_index):
                     # 검색 페이지로 이동
                     if not await goto_search_page():
                         print(f"{user_prefix} ⚠️ 검색 페이지 로드 실패. 10초 후 재시도...")
-                        await page.wait_for_timeout(10000)
+                        await page.wait_for_timeout(human_delay(8, 12))
                         continue
                     
                     # 게시물 컨테이너 찾기
@@ -484,32 +531,32 @@ async def run_user_session(user_index):
                         print(f"{user_prefix} ✅ 게시물 #{i+1} 처리 완료")
                         print(f"{user_prefix} {'-'*40}")
                         
-                        await page.wait_for_timeout(2000)
+                        await page.wait_for_timeout(human_delay(1.5, 2.5))
                     
                     # 오류로 인한 재시작 또는 정상 완료 처리
                     if restart_needed and processed_count < 30:
                         print(f"{user_prefix} 🔄 오류로 인해 10초 후 검색 페이지로 돌아갑니다...")
                         # 현재 활동 통계 출력
                         print_stats()
-                        await page.wait_for_timeout(10000)
+                        await page.wait_for_timeout(human_delay(8, 12))
                         continue
                         
                     print(f"\n{user_prefix} ✅ 이번 시도에서 {current_loop_processed}개, 누적 {processed_count}개의 게시물을 처리했습니다.")
                     
-                    # 30개 게시물 시도 후 시간 기록 (33분 휴식용)
+                    # 30개 게시물 시도 후 시간 기록 (1시간 휴식용)
                     if processed_count >= 30:  # 누적으로 30개 이상 처리했으면
                         # 현재 활동 통계 출력
                         print_stats()
                         
                         await save_timestamp(timestamp_file)
-                        print(f"{user_prefix} ⏰ 누적 {processed_count}개 게시물 처리 완료. 33분 휴식합니다...")
+                        print(f"{user_prefix} ⏰ 누적 {processed_count}개 게시물 처리 완료. 1시간 휴식합니다...")
                         # 휴식 후 누적 카운터 초기화
                         processed_count = 0
                         await asyncio.sleep(60)  # 1분만 대기 후 다시 시간 확인 로직으로
                     else:
                         # 30개 미만 시도 시 10초만 대기
                         print(f"{user_prefix} 🔄 10초 후 새로고침하여 다시 시작합니다... (누적 처리: {processed_count}/30)")
-                        await page.wait_for_timeout(10000)
+                        await page.wait_for_timeout(human_delay(8, 12))
                     
                     # 다음 루프 시작 전 쿠키 유지를 위해 스토리지 업데이트
                     await save_storage_state(context, token_file)
@@ -522,7 +569,7 @@ async def run_user_session(user_index):
                 except Exception as e:
                     print(f"{user_prefix} ❌ 세션 실행 중 오류 발생: {str(e)}")
                     # 오류 발생 시 10초 대기 후 재시도
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(human_delay(8, 12))
                     
     except KeyboardInterrupt:
         # 세션 외부에서의 Ctrl+C 처리
