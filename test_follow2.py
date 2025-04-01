@@ -374,11 +374,11 @@ async def run_user_session(user_index):
                     await page.evaluate("window.scrollTo(0, 0)")
                     await page.wait_for_timeout(1000)
                     
-                    # 콘텐츠 로드를 위해 스크롤 (약 100개 게시물 로드 목표)
-                    print(f"{user_prefix} 📜 게시물 로드를 위해 스크롤 중... (약 100개 목표)")
-                    for i in range(20):  # 20번 스크롤로 약 100개 게시물 로드 목표
+                    # 콘텐츠 로드를 위해 스크롤 (약 30개 게시물 로드 목표)
+                    print(f"{user_prefix} 📜 게시물 로드를 위해 스크롤 중... (약 30개 목표)")
+                    for i in range(6):  # 6번 스크롤로 약 30개 게시물 로드 목표
                         await page.evaluate(f"window.scrollTo(0, {1000 * (i + 1)})")
-                        print(f"{user_prefix} 스크롤 진행: {i+1}/20")
+                        print(f"{user_prefix} 스크롤 진행: {i+1}/6")
                         await page.wait_for_timeout(1500)  # 각 스크롤 후 더 오래 기다려 로딩 보장
                     
                     # 맨 위로 다시 스크롤
@@ -415,8 +415,8 @@ async def run_user_session(user_index):
                 print(f"{user_prefix} ❌ 게시물 목록 로드 중 오류: {str(e)}")
                 continue
             
-            # 처리할 게시물 수 설정 (최대 100개, 실제 찾은 게시물 수 중 작은 값)
-            posts_to_process = min(100, post_count)
+            # 처리할 게시물 수 설정 (최대 30개, 실제 찾은 게시물 수 중 작은 값)
+            posts_to_process = min(30, post_count)
             processed_count = 0
             restart_needed = False
             error_count = 0  # 연속 오류 횟수 추적
@@ -446,11 +446,11 @@ async def run_user_session(user_index):
                     
                     # 연속 3회 이상 오류 발생 시 페이지 새로고침
                     if error_count >= 3:
-                        print(f"{user_prefix} �� 연속 {error_count}회 오류 발생. 페이지를 새로고침합니다.")
+                        print(f"{user_prefix} ⚠️ 연속 {error_count}회 오류 발생. 페이지를 새로고침합니다.")
                         restart_needed = True
                         break
                 
-                print(f"{user_prefix} �� 게시물 #{i+1} 처리 완료")
+                print(f"{user_prefix} ✅ 게시물 #{i+1} 처리 완료")
                 print(f"{user_prefix} {'-'*40}")
                 
                 await page.wait_for_timeout(2000)
@@ -463,15 +463,15 @@ async def run_user_session(user_index):
                 
             print(f"\n{user_prefix} ✅ 총 {processed_count}개의 게시물을 처리했습니다.")
             
-            # 100개 게시물 탐색 후 시간 기록 (1시간 휴식용)
-            if processed_count >= 100:
+            # 30개 게시물 탐색 후 시간 기록 (1시간 휴식용)
+            if processed_count >= 30:
                 await save_timestamp(timestamp_file)
-                print(f"{user_prefix} ⏰ 100개 게시물 탐색 완료. 1시간 휴식합니다...")
+                print(f"{user_prefix} ⏰ 30개 게시물 탐색 완료. 1시간 휴식합니다...")
                 await asyncio.sleep(60)  # 바로 1분만 대기 후 다시 시간 확인 로직으로
             else:
-                # 100개 미만 처리 시 10초만 대기
-                print(f"{user_prefix} 🔄 10초 후 새로고침하여 다시 시작합니다...")
-                await page.wait_for_timeout(10000)
+                # 30개 미만 처리 시 10초만 대기
+                print(f"{user_prefix} 🔄 20초 후 새로고침하여 다시 시작합니다...")
+                await page.wait_for_timeout(20000)
             
             # 다음 루프 시작 전 쿠키 유지를 위해 스토리지 업데이트
             await save_storage_state(context, token_file)
