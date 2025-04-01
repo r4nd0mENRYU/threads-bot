@@ -387,6 +387,13 @@ async def run_user_session(user_index):
         print(f"{user_prefix} 📈 총 활동: {sum(activity_counters.values())}개")
         print(f"{user_prefix} 📊 누적 처리 게시물: {processed_count}개")
     
+    def should_take_break():
+        """휴식이 필요한지 확인"""
+        for action, count in activity_counters.items():
+            if count >= 70:
+                return True
+        return False
+    
     try:
         async with async_playwright() as p:
             browser_context_args = {}
@@ -544,14 +551,21 @@ async def run_user_session(user_index):
                     print(f"\n{user_prefix} ✅ 이번 시도에서 {current_loop_processed}개, 누적 {processed_count}개의 게시물을 처리했습니다.")
                     
                     # 30개 게시물 시도 후 시간 기록 (1시간 휴식용)
-                    if processed_count >= 30:  # 누적으로 30개 이상 처리했으면
+                    if processed_count >= 30 or should_take_break():  # 누적으로 30개 이상 처리했거나 활동 카운터가 70개 이상이면
                         # 현재 활동 통계 출력
                         print_stats()
                         
                         await save_timestamp(timestamp_file)
-                        print(f"{user_prefix} ⏰ 누적 {processed_count}개 게시물 처리 완료. 1시간 휴식합니다...")
-                        # 휴식 후 누적 카운터 초기화
+                        if should_take_break():
+                            print(f"{user_prefix} ⏰ 활동 카운터가 70개를 초과했습니다. 1시간 휴식합니다...")
+                        else:
+                            print(f"{user_prefix} ⏰ 누적 {processed_count}개 게시물 처리 완료. 1시간 휴식합니다...")
+                        # 휴식 후 누적 카운터와 활동 카운터 초기화
                         processed_count = 0
+                        activity_counters['follow'] = 0
+                        activity_counters['like'] = 0
+                        activity_counters['comment'] = 0
+                        activity_counters['repost'] = 0
                         await asyncio.sleep(60)  # 1분만 대기 후 다시 시간 확인 로직으로
                     else:
                         # 30개 미만 시도 시 10초만 대기
