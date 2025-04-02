@@ -121,22 +121,29 @@ async def move_mouse_to_element(page, element, min_delay=0.5, max_delay=1.5):
         center_y = box['y'] + box['height'] / 2
         
         # 현재 마우스 위치 가져오기
-        current_pos = await page.mouse.position()
+        current_x = await page.evaluate("parseInt(document.body.getAttribute('data-mouse-x') || 0)")
+        current_y = await page.evaluate("parseInt(document.body.getAttribute('data-mouse-y') || 0)")
+        
+        # 현재 위치가 0이면 화면 중앙에서 시작
+        if current_x == 0 and current_y == 0:
+            viewport = await page.evaluate("({ width: window.innerWidth, height: window.innerHeight })")
+            current_x = viewport['width'] / 2
+            current_y = viewport['height'] / 2
         
         # 현재 위치에서 목표 위치까지의 거리 계산
-        distance = ((center_x - current_pos['x'])**2 + (center_y - current_pos['y'])**2)**0.5
+        distance = ((center_x - current_x)**2 + (center_y - current_y)**2)**0.5
         
         # 거리에 따라 단계 수 결정 (최소 3단계, 최대 10단계)
         steps = max(3, min(10, int(distance / 50)))
         
         # 각 단계의 이동 거리 계산
-        step_x = (center_x - current_pos['x']) / steps
-        step_y = (center_y - current_pos['y']) / steps
+        step_x = (center_x - current_x) / steps
+        step_y = (center_y - current_y) / steps
         
         # 단계별로 마우스 이동
         for i in range(steps):
-            target_x = current_pos['x'] + step_x * (i + 1)
-            target_y = current_pos['y'] + step_y * (i + 1)
+            target_x = current_x + step_x * (i + 1)
+            target_y = current_y + step_y * (i + 1)
             
             # 마우스 이동
             await page.mouse.move(target_x, target_y)
@@ -482,6 +489,14 @@ async def run_user_session(user_index):
                     browser = await p.chromium.launch(headless=False)
                     context = await browser.new_context(**browser_context_args)
                     page = await context.new_page()
+                    
+                    # 마우스 위치 추적을 위한 이벤트 리스너 추가
+                    await page.add_init_script("""
+                        document.addEventListener('mousemove', event => {
+                            document.body.setAttribute('data-mouse-x', event.clientX);
+                            document.body.setAttribute('data-mouse-y', event.clientY);
+                        });
+                    """)
 
                     # 토큰 파일이 없는 경우에만 로그인 진행
                     if not os.path.exists(token_file):
