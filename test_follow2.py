@@ -101,9 +101,9 @@ async def can_run_now(filename='last_run.json'):
         return True
 
 def human_delay(min_seconds=1, max_seconds=5):
-    """사람처럼 보이는 지연 시간 생성"""
+    """사람처럼 보이는 지연 시간 생성 (밀리초 단위)"""
     delay = random.uniform(min_seconds, max_seconds)
-    return delay
+    return int(delay * 1000)  # 초를 밀리초로 변환
 
 async def process_post(page, post_index, user_index, counters):
     """개별 게시물 처리"""
@@ -181,7 +181,7 @@ async def process_post(page, post_index, user_index, counters):
                     
                     # ESC 키를 눌러 모달 닫기
                     await page.keyboard.press("Escape")
-                    await page.wait_for_timeout(human_delay(1, 2))
+                    await page.wait_for_timeout(human_delay(2, 3))
                     
                     # 팔로우한 사용자 저장
                     await save_followed_user(username, user_id)
@@ -259,7 +259,7 @@ async def process_post(page, post_index, user_index, counters):
                             try:
                                 await post_button.click(timeout=5000)
                                 print(f"{user_prefix} ✅ 댓글을 게시했습니다")
-                                await page.wait_for_timeout(human_delay(2, 3))
+                                await page.wait_for_timeout(human_delay(3, 4))
                                 counters['comment'] += 1
                             except Exception as e:
                                 print(f"{user_prefix} ⚠️ 댓글 게시 버튼 클릭 실패: {str(e)}")
@@ -377,6 +377,10 @@ async def run_user_session(user_index):
     # 누적 처리 게시물 수 (세션 전체에서 유지)
     processed_count = 0
     
+    # 브라우저 재시작 카운터
+    browser_restart_count = 0
+    BROWSER_RESTART_INTERVAL = 100  # 100개의 게시물 처리 후 브라우저 재시작
+    
     def print_stats():
         """활동 통계 출력"""
         print(f"\n{user_prefix} 📊 현재까지의 활동 통계:")
@@ -396,197 +400,216 @@ async def run_user_session(user_index):
     
     try:
         async with async_playwright() as p:
-            browser_context_args = {}
-            
-            # 토큰 파일이 있으면 로드
-            if os.path.exists(token_file):
-                print(f"{user_prefix} 💫 저장된 토큰을 불러옵니다...")
-                browser_context_args['storage_state'] = token_file
-            
-            # 브라우저 실행
-            browser = await p.chromium.launch(headless=False)
-            context = await browser.new_context(**browser_context_args)
-            page = await context.new_page()
-
-            # 토큰 파일이 없는 경우에만 로그인 진행
-            if not os.path.exists(token_file):
-                print(f"{user_prefix} 🔑 로그인을 진행합니다...")
-                await page.goto('https://www.threads.net/login')
-                await page.wait_for_load_state('networkidle')
+            while True:  # 브라우저 재시작을 위한 외부 루프
+                browser = None
+                context = None
+                page = None
                 
-                await page.get_by_placeholder("사용자 이름, 전화번호 또는 이메일 주소").fill(username)
-                await page.get_by_placeholder("비밀번호").fill(password)
-                
-                await page.wait_for_timeout(human_delay(1, 2))
-                login_button = page.get_by_role("button", name="로그인", exact=True)
-                await login_button.first.click()
-                
-                await page.wait_for_load_state('networkidle')
-                await page.wait_for_timeout(human_delay(8, 12))
-                
-                await save_storage_state(context, token_file)
-            
-            # 세션 동작 시작
-            while True:
                 try:
-                    # 대기 시간 확인 (리셋 후 1시간이 지났는지)
-                    timestamp_file = f'last_run_user{user_index+1}.json'
-                    if not await can_run_now(timestamp_file):
-                        print(f"{user_prefix} ⏰ 세션이 대기 중입니다. 1분 후 다시 확인합니다.")
-                        await asyncio.sleep(60)  # 1분 대기 후 다시 확인
-                        continue
+                    browser_context_args = {}
                     
-                    # 검색 페이지로 이동 함수
-                    async def goto_search_page():
-                        print(f"\n{user_prefix} 🔄 검색 페이지로 이동합니다...")
+                    # 토큰 파일이 있으면 로드
+                    if os.path.exists(token_file):
+                        print(f"{user_prefix} 💫 저장된 토큰을 불러옵니다...")
+                        browser_context_args['storage_state'] = token_file
+                    
+                    # 브라우저 실행
+                    browser = await p.chromium.launch(headless=False)
+                    context = await browser.new_context(**browser_context_args)
+                    page = await context.new_page()
+
+                    # 토큰 파일이 없는 경우에만 로그인 진행
+                    if not os.path.exists(token_file):
+                        print(f"{user_prefix} 🔑 로그인을 진행합니다...")
+                        await page.goto('https://www.threads.net/login')
+                        await page.wait_for_load_state('networkidle')
+                        
+                        await page.get_by_placeholder("사용자 이름, 전화번호 또는 이메일 주소").fill(username)
+                        await page.get_by_placeholder("비밀번호").fill(password)
+                        
+                        await page.wait_for_timeout(human_delay(1, 2))
+                        login_button = page.get_by_role("button", name="로그인", exact=True)
+                        await login_button.first.click()
+                        
+                        await page.wait_for_load_state('networkidle')
+                        await page.wait_for_timeout(human_delay(8, 12))
+                        
+                        await save_storage_state(context, token_file)
+                    
+                    # 세션 동작 시작
+                    while True:
                         try:
-                            await page.goto('https://www.threads.net/search?q=%EC%8A%A4%ED%95%98%EB%A6%AC1000&serp_type=default')
-                            await page.wait_for_load_state('networkidle')
+                            # 브라우저 재시작이 필요한지 확인
+                            if browser_restart_count >= BROWSER_RESTART_INTERVAL:
+                                print(f"{user_prefix} 🔄 브라우저를 재시작합니다... (처리 게시물: {browser_restart_count}개)")
+                                await save_storage_state(context, token_file)
+                                break  # 내부 루프를 빠져나가 브라우저 재시작
                             
-                            # 현재 URL 확인
-                            current_url = page.url
-                            if 'instagram.com' in current_url:
-                                print(f"{user_prefix} ❌ Instagram URL이 감지되었습니다. 프로그램을 종료합니다.")
-                                sys.exit(1)
+                            # 대기 시간 확인 (리셋 후 1시간이 지났는지)
+                            timestamp_file = f'last_run_user{user_index+1}.json'
+                            if not await can_run_now(timestamp_file):
+                                print(f"{user_prefix} ⏰ 세션이 대기 중입니다. 1분 후 다시 확인합니다.")
+                                await asyncio.sleep(60)  # 1분 대기 후 다시 확인
+                                continue
+                            
+                            # 검색 페이지로 이동 함수
+                            async def goto_search_page():
+                                print(f"\n{user_prefix} 🔄 검색 페이지로 이동합니다...")
+                                try:
+                                    await page.goto('https://www.threads.net/search?q=%EC%8A%A4%ED%95%98%EB%A6%AC1000&serp_type=default')
+                                    await page.wait_for_load_state('networkidle')
+                                    
+                                    # 현재 URL 확인
+                                    current_url = page.url
+                                    if 'instagram.com' in current_url:
+                                        print(f"{user_prefix} ❌ Instagram URL이 감지되었습니다. 프로그램을 종료합니다.")
+                                        sys.exit(1)
+                                        
+                                    await page.wait_for_timeout(human_delay(3, 5))  # 페이지 로딩을 위해 사람처럼 대기
+                                    
+                                    # 초기 스크롤 (맨 위로)
+                                    await page.evaluate("window.scrollTo(0, 0)")
+                                    await page.wait_for_timeout(human_delay(1, 2))
+                                    
+                                    # 콘텐츠 로드를 위해 스크롤 (약 30개 게시물 로드 목표)
+                                    print(f"{user_prefix} 📜 게시물 로드를 위해 스크롤 중... (약 30개 목표)")
+                                    for i in range(6):  # 6번 스크롤로 약 30개 게시물 로드 목표
+                                        await page.evaluate(f"window.scrollTo(0, {1000 * (i + 1)})")
+                                        print(f"{user_prefix} 스크롤 진행: {i+1}/6")
+                                        await page.wait_for_timeout(human_delay(1, 2))  # 각 스크롤 후 더 오래 기다려 로딩 보장
+                                    
+                                    # 맨 위로 다시 스크롤
+                                    await page.evaluate("window.scrollTo(0, 0)")
+                                    await page.wait_for_timeout(human_delay(1, 2))
+                                    return True
+                                except Exception as e:
+                                    print(f"{user_prefix} ❌ 검색 페이지 로드 중 오류: {str(e)}")
+                                    return False
+                            
+                            # 검색 페이지로 이동
+                            if not await goto_search_page():
+                                print(f"{user_prefix} ⚠️ 검색 페이지 로드 실패. 10초 후 재시도...")
+                                await page.wait_for_timeout(human_delay(8, 12))
+                                continue
+                            
+                            # 게시물 컨테이너 찾기
+                            print(f"{user_prefix} �� 게시물 컨테이너 찾는 중...")
+                            try:
+                                posts_container = page.locator(".x78zum5.xdt5ytf.x13dflua.x11xpdln .x78zum5.xdt5ytf.x1iyjqo2.x1n2onr6").first
+                                if not await posts_container.is_visible():
+                                    print(f"{user_prefix} ❌ 게시물 컨테이너를 찾을 수 없습니다. 다시 시도합니다.")
+                                    continue
+                                    
+                                # 게시물 목록 가져오기
+                                posts = await posts_container.locator("div.x78zum5.xdt5ytf").all()
+                                post_count = len(posts)
+                                print(f"{user_prefix} ✅ 총 {post_count}개의 게시물을 찾았습니다.")
                                 
-                            await page.wait_for_timeout(human_delay(3, 5))  # 페이지 로딩을 위해 사람처럼 대기
+                                if post_count == 0:
+                                    print(f"{user_prefix} ❌ 게시물을 찾을 수 없습니다. 다시 시도합니다.")
+                                    continue
+                            except Exception as e:
+                                print(f"{user_prefix} ❌ 게시물 목록 로드 중 오류: {str(e)}")
+                                continue
                             
-                            # 초기 스크롤 (맨 위로)
-                            await page.evaluate("window.scrollTo(0, 0)")
-                            await page.wait_for_timeout(human_delay(1, 2))
+                            # 처리할 게시물 수 설정 (최대 30개, 실제 찾은 게시물 수 중 작은 값)
+                            posts_to_process = min(30, post_count)
+                            # 현재 루프의 처리 카운터
+                            current_loop_processed = 0
+                            restart_needed = False
+                            error_count = 0  # 연속 오류 횟수 추적
                             
-                            # 콘텐츠 로드를 위해 스크롤 (약 30개 게시물 로드 목표)
-                            print(f"{user_prefix} 📜 게시물 로드를 위해 스크롤 중... (약 30개 목표)")
-                            for i in range(6):  # 6번 스크롤로 약 30개 게시물 로드 목표
-                                await page.evaluate(f"window.scrollTo(0, {1000 * (i + 1)})")
-                                print(f"{user_prefix} 스크롤 진행: {i+1}/6")
-                                await page.wait_for_timeout(human_delay(1, 2))  # 각 스크롤 후 더 오래 기다려 로딩 보장
+                            print(f"{user_prefix} 🔄 현재까지 누적 처리 게시물: {processed_count}개")
                             
-                            # 맨 위로 다시 스크롤
-                            await page.evaluate("window.scrollTo(0, 0)")
-                            await page.wait_for_timeout(human_delay(1, 2))
-                            return True
+                            # 각 게시물 처리
+                            for i in range(posts_to_process):
+                                if restart_needed:
+                                    break
+                                    
+                                print(f"{user_prefix} {'-'*40}")
+                                print(f"{user_prefix} 📝 게시물 #{i+1} 처리 시작")
+                                
+                                result, reload_needed = await process_post(page, i, user_index, activity_counters)
+                                
+                                if reload_needed:
+                                    print(f"{user_prefix} ⚠️ 페이지 오류 발생. 검색 페이지로 돌아갑니다.")
+                                    restart_needed = True
+                                    break
+                                    
+                                if result:
+                                    current_loop_processed += 1
+                                    processed_count += 1  # 누적 카운터 증가
+                                    browser_restart_count += 1  # 브라우저 재시작 카운터 증가
+                                    error_count = 0  # 성공하면 오류 카운트 리셋
+                                    print(f"{user_prefix} ✅ 처리 성공 ({current_loop_processed}/{posts_to_process}, 누적: {processed_count}/30)")
+                                else:
+                                    error_count += 1
+                                    print(f"{user_prefix} ❌ 처리 실패 ({current_loop_processed}/{posts_to_process}, 누적: {processed_count}/30) - 연속 오류: {error_count}")
+                                    
+                                    # 연속 3회 이상 오류 발생 시 페이지 새로고침
+                                    if error_count >= 3:
+                                        print(f"{user_prefix} ⚠️ 연속 {error_count}회 오류 발생. 페이지를 새로고침합니다.")
+                                        restart_needed = True
+                                        break
+                                
+                                print(f"{user_prefix} ✅ 게시물 #{i+1} 처리 완료")
+                                print(f"{user_prefix} {'-'*40}")
+                                
+                                await page.wait_for_timeout(human_delay(1.5, 2.5))
+                            
+                            # 오류로 인한 재시작 또는 정상 완료 처리
+                            if restart_needed and processed_count < 30:
+                                print(f"{user_prefix} 🔄 오류로 인해 10초 후 검색 페이지로 돌아갑니다...")
+                                # 현재 활동 통계 출력
+                                print_stats()
+                                await page.wait_for_timeout(human_delay(8, 12))
+                                continue
+                                
+                            print(f"\n{user_prefix} ✅ 이번 시도에서 {current_loop_processed}개, 누적 {processed_count}개의 게시물을 처리했습니다.")
+                            
+                            # 30개 게시물 시도 후 시간 기록 (1시간 휴식용)
+                            if processed_count >= 30 or should_take_break():  # 누적으로 30개 이상 처리했거나 활동 카운터가 70개 이상이면
+                                # 현재 활동 통계 출력
+                                print_stats()
+                                
+                                await save_timestamp(timestamp_file)
+                                if should_take_break():
+                                    print(f"{user_prefix} ⏰ 활동 카운터가 70개를 초과했습니다. 1시간 휴식합니다...")
+                                else:
+                                    print(f"{user_prefix} ⏰ 누적 {processed_count}개 게시물 처리 완료. 1시간 휴식합니다...")
+                                # 휴식 후 누적 카운터와 활동 카운터 초기화
+                                processed_count = 0
+                                activity_counters['follow'] = 0
+                                activity_counters['like'] = 0
+                                activity_counters['comment'] = 0
+                                activity_counters['repost'] = 0
+                                await asyncio.sleep(60)  # 1분만 대기 후 다시 시간 확인 로직으로
+                            else:
+                                # 30개 미만 시도 시 10초만 대기
+                                print(f"{user_prefix} �� 10초 후 새로고침하여 다시 시작합니다... (누적 처리: {processed_count}/30)")
+                                await page.wait_for_timeout(human_delay(8, 12))
+                            
+                            # 다음 루프 시작 전 쿠키 유지를 위해 스토리지 업데이트
+                            await save_storage_state(context, token_file)
+                            
+                        except KeyboardInterrupt:
+                            print(f"\n{user_prefix} ⚠️ 사용자가 프로그램 종료를 요청했습니다.")
+                            print_stats()
+                            return
                         except Exception as e:
-                            print(f"{user_prefix} ❌ 검색 페이지 로드 중 오류: {str(e)}")
-                            return False
-                    
-                    # 검색 페이지로 이동
-                    if not await goto_search_page():
-                        print(f"{user_prefix} ⚠️ 검색 페이지 로드 실패. 10초 후 재시도...")
-                        await page.wait_for_timeout(human_delay(8, 12))
-                        continue
-                    
-                    # 게시물 컨테이너 찾기
-                    print(f"{user_prefix} 📦 게시물 컨테이너 찾는 중...")
-                    try:
-                        posts_container = page.locator(".x78zum5.xdt5ytf.x13dflua.x11xpdln .x78zum5.xdt5ytf.x1iyjqo2.x1n2onr6").first
-                        if not await posts_container.is_visible():
-                            print(f"{user_prefix} ❌ 게시물 컨테이너를 찾을 수 없습니다. 다시 시도합니다.")
-                            continue
+                            print(f"{user_prefix} ❌ 세션 실행 중 오류 발생: {str(e)}")
+                            await asyncio.sleep(human_delay(8, 12))
                             
-                        # 게시물 목록 가져오기
-                        posts = await posts_container.locator("div.x78zum5.xdt5ytf").all()
-                        post_count = len(posts)
-                        print(f"{user_prefix} ✅ 총 {post_count}개의 게시물을 찾았습니다.")
+                finally:
+                    # 브라우저 종료
+                    if page:
+                        await page.close()
+                    if context:
+                        await context.close()
+                    if browser:
+                        await browser.close()
                         
-                        if post_count == 0:
-                            print(f"{user_prefix} ❌ 게시물을 찾을 수 없습니다. 다시 시도합니다.")
-                            continue
-                    except Exception as e:
-                        print(f"{user_prefix} ❌ 게시물 목록 로드 중 오류: {str(e)}")
-                        continue
-                    
-                    # 처리할 게시물 수 설정 (최대 30개, 실제 찾은 게시물 수 중 작은 값)
-                    posts_to_process = min(30, post_count)
-                    # 현재 루프의 처리 카운터
-                    current_loop_processed = 0
-                    restart_needed = False
-                    error_count = 0  # 연속 오류 횟수 추적
-                    
-                    print(f"{user_prefix} 🔄 현재까지 누적 처리 게시물: {processed_count}개")
-                    
-                    # 각 게시물 처리
-                    for i in range(posts_to_process):
-                        if restart_needed:
-                            break
-                            
-                        print(f"{user_prefix} {'-'*40}")
-                        print(f"{user_prefix} 📝 게시물 #{i+1} 처리 시작")
-                        
-                        result, reload_needed = await process_post(page, i, user_index, activity_counters)
-                        
-                        if reload_needed:
-                            print(f"{user_prefix} ⚠️ 페이지 오류 발생. 검색 페이지로 돌아갑니다.")
-                            restart_needed = True
-                            break
-                            
-                        if result:
-                            current_loop_processed += 1
-                            processed_count += 1  # 누적 카운터 증가
-                            error_count = 0  # 성공하면 오류 카운트 리셋
-                            print(f"{user_prefix} ✅ 처리 성공 ({current_loop_processed}/{posts_to_process}, 누적: {processed_count}/30)")
-                        else:
-                            error_count += 1
-                            print(f"{user_prefix} ❌ 처리 실패 ({current_loop_processed}/{posts_to_process}, 누적: {processed_count}/30) - 연속 오류: {error_count}")
-                            
-                            # 연속 3회 이상 오류 발생 시 페이지 새로고침
-                            if error_count >= 3:
-                                print(f"{user_prefix} ⚠️ 연속 {error_count}회 오류 발생. 페이지를 새로고침합니다.")
-                                restart_needed = True
-                                break
-                        
-                        print(f"{user_prefix} ✅ 게시물 #{i+1} 처리 완료")
-                        print(f"{user_prefix} {'-'*40}")
-                        
-                        await page.wait_for_timeout(human_delay(1.5, 2.5))
-                    
-                    # 오류로 인한 재시작 또는 정상 완료 처리
-                    if restart_needed and processed_count < 30:
-                        print(f"{user_prefix} 🔄 오류로 인해 10초 후 검색 페이지로 돌아갑니다...")
-                        # 현재 활동 통계 출력
-                        print_stats()
-                        await page.wait_for_timeout(human_delay(8, 12))
-                        continue
-                        
-                    print(f"\n{user_prefix} ✅ 이번 시도에서 {current_loop_processed}개, 누적 {processed_count}개의 게시물을 처리했습니다.")
-                    
-                    # 30개 게시물 시도 후 시간 기록 (1시간 휴식용)
-                    if processed_count >= 30 or should_take_break():  # 누적으로 30개 이상 처리했거나 활동 카운터가 70개 이상이면
-                        # 현재 활동 통계 출력
-                        print_stats()
-                        
-                        await save_timestamp(timestamp_file)
-                        if should_take_break():
-                            print(f"{user_prefix} ⏰ 활동 카운터가 70개를 초과했습니다. 1시간 휴식합니다...")
-                        else:
-                            print(f"{user_prefix} ⏰ 누적 {processed_count}개 게시물 처리 완료. 1시간 휴식합니다...")
-                        # 휴식 후 누적 카운터와 활동 카운터 초기화
-                        processed_count = 0
-                        activity_counters['follow'] = 0
-                        activity_counters['like'] = 0
-                        activity_counters['comment'] = 0
-                        activity_counters['repost'] = 0
-                        await asyncio.sleep(60)  # 1분만 대기 후 다시 시간 확인 로직으로
-                    else:
-                        # 30개 미만 시도 시 10초만 대기
-                        print(f"{user_prefix} 🔄 10초 후 새로고침하여 다시 시작합니다... (누적 처리: {processed_count}/30)")
-                        await page.wait_for_timeout(human_delay(8, 12))
-                    
-                    # 다음 루프 시작 전 쿠키 유지를 위해 스토리지 업데이트
-                    await save_storage_state(context, token_file)
-                    
-                except KeyboardInterrupt:
-                    # Ctrl+C 입력 시 현재 활동 통계 출력 후 종료
-                    print(f"\n{user_prefix} ⚠️ 사용자가 프로그램 종료를 요청했습니다.")
-                    print_stats()
-                    return
-                except Exception as e:
-                    print(f"{user_prefix} ❌ 세션 실행 중 오류 발생: {str(e)}")
-                    # 오류 발생 시 10초 대기 후 재시도
-                    await asyncio.sleep(human_delay(8, 12))
-                    
     except KeyboardInterrupt:
-        # 세션 외부에서의 Ctrl+C 처리
         print(f"\n{user_prefix} ⚠️ 사용자가 프로그램 종료를 요청했습니다.")
         print_stats()
 
