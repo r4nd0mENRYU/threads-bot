@@ -80,7 +80,7 @@ async def save_timestamp(filename='last_run.json'):
     print(f"✅ 현재 시간이 {filename}에 저장되었습니다.")
 
 async def can_run_now(filename='last_run.json'):
-    """마지막 실행 후 1시간이 지났는지 확인"""
+    """마지막 실행 후 1시간에서 1시간 10분 사이의 랜덤한 시간이 지났는지 확인"""
     if not os.path.exists(filename):
         return True
     
@@ -88,7 +88,10 @@ async def can_run_now(filename='last_run.json'):
         with open(filename, 'r') as f:
             data = json.load(f)
         last_run = datetime.fromisoformat(data['last_run'])
-        rest_time_later = last_run + timedelta(hours=1)
+        
+        # 1시간에서 1시간 10분 사이의 랜덤한 시간 생성
+        random_minutes = random.randint(60, 70)
+        rest_time_later = last_run + timedelta(minutes=random_minutes)
         can_run = datetime.now() >= rest_time_later
         
         if not can_run:
@@ -175,6 +178,9 @@ async def process_post(page, post_index, user_index, counters):
                     await follow_button.click()
                     print(f"{user_prefix} ✅ 팔로우 버튼 클릭 성공")
                     await page.wait_for_timeout(human_delay(1.5, 2.5))
+                    
+                    # 에러 상태 일때 하단에 팝업 
+                    # span.x193iq5w.xeuugli.x13faqbe.x1vvkbs.x1xmvt09.x1lliihq.x1s928wv.xhkezso.x1gmr53x.x1cpjm7i.x1fgarty.x1943h6x.xudqn12.x3x7a5m.x6prxxf.xvq8zen.xo1l8bm.xzsf02u
                     
                     # 모달이 뜨면 팔로우 버튼 2 클릭: div.x1qjc9v5.x7sf2oe.x78zum5.xdt5ytf.x1n2onr6.x1al4vs7 div.x6ikm8r.x10wlt62.xlyipyv
                     follow_confirm = page.locator("div.x1qjc9v5.x7sf2oe.x78zum5.xdt5ytf.x1n2onr6.x1al4vs7 div.x6ikm8r.x10wlt62.xlyipyv").first
@@ -383,7 +389,7 @@ async def run_user_session(user_index):
     
     # 브라우저 재시작 카운터
     browser_restart_count = 0
-    BROWSER_RESTART_INTERVAL = 100  # 100개의 게시물 처리 후 브라우저 재시작
+    BROWSER_RESTART_INTERVAL = 60  # 60개의 게시물 처리 후 브라우저 재시작
     
     def print_stats():
         """활동 통계 출력"""
@@ -571,16 +577,16 @@ async def run_user_session(user_index):
                                 
                             print(f"\n{user_prefix} ✅ 이번 시도에서 {current_loop_processed}개, 누적 {processed_count}개의 게시물을 처리했습니다.")
                             
-                            # 30개 게시물 시도 후 시간 기록 (1시간 휴식용)
+                            # 30개 게시물 시도 후 시간 기록 (1시간에서 1시간 10분 사이의 랜덤한 휴식)
                             if processed_count >= 30 or should_take_break():  # 누적으로 30개 이상 처리했거나 활동 카운터가 70개 이상이면
                                 # 현재 활동 통계 출력
                                 print_stats()
                                 
                                 await save_timestamp(timestamp_file)
                                 if should_take_break():
-                                    print(f"{user_prefix} ⏰ 활동 카운터가 70개를 초과했습니다. 1시간 휴식합니다...")
+                                    print(f"{user_prefix} ⏰ 활동 카운터가 70개를 초과했습니다. 1시간에서 1시간 10분 사이의 랜덤한 시간 동안 휴식합니다...")
                                 else:
-                                    print(f"{user_prefix} ⏰ 누적 {processed_count}개 게시물 처리 완료. 1시간 휴식합니다...")
+                                    print(f"{user_prefix} ⏰ 누적 {processed_count}개 게시물 처리 완료. 1시간에서 1시간 10분 사이의 랜덤한 시간 동안 휴식합니다...")
                                 # 휴식 후 누적 카운터와 활동 카운터 초기화
                                 processed_count = 0
                                 activity_counters['follow'] = 0
