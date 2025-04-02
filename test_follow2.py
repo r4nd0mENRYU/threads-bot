@@ -108,6 +108,47 @@ def human_delay(min_seconds=1, max_seconds=5):
     delay = random.uniform(min_seconds, max_seconds)
     return int(delay * 1000)  # 초를 밀리초로 변환
 
+async def move_mouse_to_element(page, element, min_delay=0.5, max_delay=1.5):
+    """마우스를 요소 위로 자연스럽게 이동"""
+    try:
+        # 요소의 위치 정보 가져오기
+        box = await element.bounding_box()
+        if not box:
+            return False
+            
+        # 요소의 중앙 좌표 계산
+        center_x = box['x'] + box['width'] / 2
+        center_y = box['y'] + box['height'] / 2
+        
+        # 현재 마우스 위치 가져오기
+        current_pos = await page.mouse.position()
+        
+        # 현재 위치에서 목표 위치까지의 거리 계산
+        distance = ((center_x - current_pos['x'])**2 + (center_y - current_pos['y'])**2)**0.5
+        
+        # 거리에 따라 단계 수 결정 (최소 3단계, 최대 10단계)
+        steps = max(3, min(10, int(distance / 50)))
+        
+        # 각 단계의 이동 거리 계산
+        step_x = (center_x - current_pos['x']) / steps
+        step_y = (center_y - current_pos['y']) / steps
+        
+        # 단계별로 마우스 이동
+        for i in range(steps):
+            target_x = current_pos['x'] + step_x * (i + 1)
+            target_y = current_pos['y'] + step_y * (i + 1)
+            
+            # 마우스 이동
+            await page.mouse.move(target_x, target_y)
+            
+            # 각 단계 사이에 랜덤한 지연 시간 추가
+            await page.wait_for_timeout(human_delay(min_delay/steps, max_delay/steps))
+            
+        return True
+    except Exception as e:
+        print(f"⚠️ 마우스 이동 중 오류: {str(e)}")
+        return False
+
 async def process_post(page, post_index, user_index, counters):
     """개별 게시물 처리"""
     try:
@@ -175,6 +216,8 @@ async def process_post(page, post_index, user_index, counters):
             
             if await follow_button.is_visible():
                 if await follow_button.locator("title").first.text_content() == "팔로우":                    
+                    # 마우스를 팔로우 버튼 위로 자연스럽게 이동
+                    await move_mouse_to_element(page, follow_button)
                     await follow_button.click()
                     print(f"{user_prefix} ✅ 팔로우 버튼 클릭 성공")
                     await page.wait_for_timeout(human_delay(1.5, 2.5))
@@ -185,6 +228,8 @@ async def process_post(page, post_index, user_index, counters):
                     # 모달이 뜨면 팔로우 버튼 2 클릭: div.x1qjc9v5.x7sf2oe.x78zum5.xdt5ytf.x1n2onr6.x1al4vs7 div.x6ikm8r.x10wlt62.xlyipyv
                     follow_confirm = page.locator("div.x1qjc9v5.x7sf2oe.x78zum5.xdt5ytf.x1n2onr6.x1al4vs7 div.x6ikm8r.x10wlt62.xlyipyv").first
                     if await follow_confirm.is_visible():
+                        # 마우스를 확인 버튼 위로 자연스럽게 이동
+                        await move_mouse_to_element(page, follow_confirm)
                         await follow_confirm.click()
                         print(f"{user_prefix} ✅ 팔로우 확인 버튼 클릭 성공")
                         await page.wait_for_timeout(human_delay(1.5, 2.5))
@@ -228,6 +273,8 @@ async def process_post(page, post_index, user_index, counters):
                     # 하트 버튼이 이미 눌렸으면 댓글이나 리포스트도 건너띄고 다음 게시물로 넘어감.
 
                     if await like_button.locator("title").first.text_content() == "좋아요":
+                        # 마우스를 좋아요 버튼 위로 자연스럽게 이동
+                        await move_mouse_to_element(page, like_button)
                         await like_button.click()
                         print(f"{user_prefix} ❤️ {post_index + 1}번째 게시물에 좋아요를 눌렀습니다")
                         await page.wait_for_timeout(human_delay(1.5, 2.5))
@@ -252,6 +299,8 @@ async def process_post(page, post_index, user_index, counters):
                 comment_button = button_containers[1]
                 
                 if await comment_button.is_visible():
+                    # 마우스를 댓글 버튼 위로 자연스럽게 이동
+                    await move_mouse_to_element(page, comment_button)
                     await comment_button.click()
                     print(f"{user_prefix} ✅ 댓글 버튼 클릭 성공")
                     await page.wait_for_timeout(human_delay(1.5, 2.5))
@@ -267,6 +316,8 @@ async def process_post(page, post_index, user_index, counters):
                         post_button = page.get_by_role("button", name="게시").last
                         if await post_button.is_visible():
                             try:
+                                # 마우스를 게시 버튼 위로 자연스럽게 이동
+                                await move_mouse_to_element(page, post_button)
                                 await post_button.click(timeout=5000)
                                 print(f"{user_prefix} ✅ 댓글을 게시했습니다")
                                 await page.wait_for_timeout(human_delay(3, 4))
@@ -322,6 +373,8 @@ async def process_post(page, post_index, user_index, counters):
                 repost_button = button_containers[2]
                 
                 if await repost_button.is_visible():
+                    # 마우스를 리포스트 버튼 위로 자연스럽게 이동
+                    await move_mouse_to_element(page, repost_button)
                     await repost_button.click()
                     print(f"{user_prefix} ✅ 리포스트 버튼 클릭 성공")
                     await page.wait_for_timeout(human_delay(1.5, 2.5))
@@ -329,6 +382,8 @@ async def process_post(page, post_index, user_index, counters):
                     # 리포스트 확인 버튼
                     repost_confirm = page.get_by_role("button", name="리포스트").last
                     if await repost_confirm.is_visible():
+                        # 마우스를 리포스트 확인 버튼 위로 자연스럽게 이동
+                        await move_mouse_to_element(page, repost_confirm)
                         await repost_confirm.click()
                         print(f"{user_prefix} ✅ 리포스트 확인 버튼 클릭 성공")
                         await page.wait_for_timeout(human_delay(2, 3))
@@ -358,7 +413,7 @@ async def process_post(page, post_index, user_index, counters):
             # 열린 모달이 있으면 닫기 시도
             await page.keyboard.press("Escape")
             await page.wait_for_timeout(human_delay(1, 2))
-            await page.keyboard.press("Escape")  # 한번 더 시도
+            await page.keyboard.press("Escape")
             await page.wait_for_timeout(human_delay(1, 2))
         except:
             pass
