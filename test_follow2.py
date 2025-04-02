@@ -150,8 +150,12 @@ async def process_post(page, post_index, user_index, counters):
             return False, True
             
         # 사용자 이름 확인
+        # error log
+        # waiting for locator(".x78zum5.xdt5ytf.x13dflua.x11xpdln .x78zum5.xdt5ytf.x1iyjqo2.x1n2onr6").first.locator("div.x78zum5.xdt5ytf").nth(27).locator("span.x1lliihq.x193iq5w.x6ikm8r.x10wlt62.xlyipyv.xuxw1ft").first
+        # x1lliihq x193iq5w x6ikm8r x10wlt62 xlyipyv xuxw1ft
+        # span.x1lliihq.x1plvlek.xryxfnj.x1n2onr6.x1ji0vk5.x18bv5gf.x12jkypp.x193iq5w.xeuugli.x1fj9vlw.x13faqbe.x1vvkbs.x1s928wv.xhkezso.x1gmr53x.x1cpjm7i.x1fgarty.x1943h6x.x1i0vuye.xjohtrz.x1s688f.xp07o12.x1yc453h.x2lah0s
         try:
-            username = await post.locator("span.x1lliihq.x193iq5w.x6ikm8r.x10wlt62.xlyipyv.xuxw1ft").first.text_content(timeout=5000)
+            username = await post.locator("span.x1lliihq.x1plvlek.xryxfnj.x1n2onr6.x1ji0vk5.x18bv5gf.x12jkypp.x193iq5w.xeuugli.x1fj9vlw.x13faqbe.x1vvkbs.x1s928wv.xhkezso.x1gmr53x.x1cpjm7i.x1fgarty.x1943h6x.x1i0vuye.xjohtrz.x1s688f.xp07o12.x1yc453h.x2lah0s span.x1lliihq.x193iq5w.x6ikm8r.x10wlt62.xlyipyv.xuxw1ft").first.text_content(timeout=5000)
             print(f"{user_prefix} 👤 사용자: {username}")
         except Exception as e:
             print(f"{user_prefix} ❌ 사용자 이름 가져오기 실패: {str(e)}")
@@ -493,7 +497,7 @@ async def run_user_session(user_index):
                                 continue
                             
                             # 게시물 컨테이너 찾기
-                            print(f"{user_prefix} �� 게시물 컨테이너 찾는 중...")
+                            print(f"{user_prefix} 🔍 게시물 컨테이너 찾는 중...")
                             try:
                                 posts_container = page.locator(".x78zum5.xdt5ytf.x13dflua.x11xpdln .x78zum5.xdt5ytf.x1iyjqo2.x1n2onr6").first
                                 if not await posts_container.is_visible():
@@ -586,7 +590,7 @@ async def run_user_session(user_index):
                                 await asyncio.sleep(60)  # 1분만 대기 후 다시 시간 확인 로직으로
                             else:
                                 # 30개 미만 시도 시 10초만 대기
-                                print(f"{user_prefix} �� 10초 후 새로고침하여 다시 시작합니다... (누적 처리: {processed_count}/30)")
+                                print(f"{user_prefix} ⏰ 10초 후 새로고침하여 다시 시작합니다... (누적 처리: {processed_count}/30)")
                                 await page.wait_for_timeout(human_delay(8, 12))
                             
                             # 다음 루프 시작 전 쿠키 유지를 위해 스토리지 업데이트
@@ -615,13 +619,21 @@ async def run_user_session(user_index):
 
 async def main():
     try:
+        # 사용자 계정이 있는지 확인
+        if not USER_ACCOUNTS:
+            print("❌ users.csv 파일에서 사용자 계정을 찾을 수 없습니다.")
+            return
+            
+        print(f"\n✅ 총 {len(USER_ACCOUNTS)}개의 사용자 계정을 로드했습니다.")
+        
         # 각 사용자 세션을 비동기로 실행
-        await asyncio.gather(
-            run_user_session(0),
-            #run_user_session(1)
-        )
+        user_sessions = [run_user_session(i) for i in range(len(USER_ACCOUNTS))]
+        await asyncio.gather(*user_sessions)
+        
     except KeyboardInterrupt:
         print("\n⚠️ 프로그램이 사용자에 의해 종료되었습니다.")
+    except Exception as e:
+        print(f"\n❌ 프로그램 실행 중 오류 발생: {str(e)}")
 
 if __name__ == "__main__":
     try:
