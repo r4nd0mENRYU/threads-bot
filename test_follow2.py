@@ -648,6 +648,9 @@ async def run_user_session(user_index):
                                 activity_counters['like'] = 0
                                 activity_counters['comment'] = 0
                                 activity_counters['repost'] = 0
+                                # 브라우저 재시작 카운터도 초기화
+                                browser_restart_count = 0
+                                print(f"{user_prefix} 🔄 브라우저 재시작 카운터 초기화: {browser_restart_count}")
                                 await asyncio.sleep(60)  # 1분만 대기 후 다시 시간 확인 로직으로
                             else:
                                 # 30개 미만 시도 시 10초만 대기
